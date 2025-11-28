@@ -1,0 +1,70 @@
+# ==========================
+# PYTHON
+# ==========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+*.db
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+env.bak/
+pip-wheel-metadata/
+pip-log.txt
+
+# Byte-compiled / optimized files
+*.pyc
+*.pyo
+*.pyd
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# ==========================
+# ENVIRONMENT VARIABLES
+# ==========================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.dev
+
+# NEVER upload secrets to GitHub
+secret.*
+credentials.json
+
+# ==========================
+# EDITOR / IDE FILES
+# ==========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ==========================
+# SYSTEM FILES
+# ==========================
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# ==========================
+# LOG FILES
+# ==========================
+*.log
+
+# ==========================
+# RENDER
+# ==========================
+# (Optional) If you generate these locally
+render-build/
+render-output/
