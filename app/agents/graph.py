@@ -1,39 +1,76 @@
-# app/agents/graph.py
 from langgraph.graph import StateGraph, END
 from app.agents.state import AgentState
-from app.agents.nodes import verification_node, triage_node, wellness_node, medical_node
+from app.agents.nodes import (
+    verification_node,
+    menu_node,
+    wellness_node,
+    medical_node,
+    appointment_node,
+)
 
-def route_verification(state):
-    return "triage" if state.get("is_verified") else "verification"
 
-def route_intent(state):
-    intent = state.get("intent", "general")
-    if intent == "medical": return "medical"
-    if intent == "wellness": return "wellness"
+# --- Rutas del grafo ---
+
+def route_verification(state: AgentState):
+    """
+    - Si NO está verificado → nos quedamos en 'verification' (pide DNI / código).
+    - Si se acaba de verificar (just_verified = True) → terminamos el flujo en este turno.
+    - Si ya está verificado desde antes → vamos al menú principal.
+    """
+    if not state.get("is_verified"):
+        return "verification"
+
+    if state.get("just_verified"):
+        # Terminamos aquí, ya enviamos el menú en verification_node
+        return "verification"
+
+    # Usuario verificado en mensajes posteriores → ir al menú
+    return "menu"
+
+
+def route_menu(state: AgentState):
+    """
+    Decide a qué nodo ir según la opción elegida en el menú.
+    """
+    flow = state.get("flow")
+    if flow == "appointment":
+        return "appointment"
+    if flow == "wellness":
+        return "wellness"
+    if flow == "medical":
+        return "medical"
     return END
+
+
+# --- Definición del workflow ---
 
 workflow = StateGraph(AgentState)
 
 workflow.add_node("verification", verification_node)
-workflow.add_node("triage", triage_node)
+workflow.add_node("menu", menu_node)
 workflow.add_node("wellness", wellness_node)
 workflow.add_node("medical", medical_node)
+workflow.add_node("appointment", appointment_node)
 
 workflow.set_entry_point("verification")
 
+# Desde verificación → o seguimos verificando, o vamos al menú
 workflow.add_conditional_edges(
     "verification",
     route_verification,
-    {"verification": END, "triage": "triage"}
+    {"verification": END, "menu": "menu"},
 )
 
+# Desde el menú → cita / wellness / info médica / fin
 workflow.add_conditional_edges(
-    "triage",
-    route_intent,
-    {"medical": "medical", "wellness": "wellness", END: END}
+    "menu",
+    route_menu,
+    {"appointment": "appointment", "wellness": "wellness", "medical": "medical", END: END},
 )
 
+# Nodos terminales
 workflow.add_edge("wellness", END)
 workflow.add_edge("medical", END)
+workflow.add_edge("appointment", END)
 
 app_graph = workflow.compile()
