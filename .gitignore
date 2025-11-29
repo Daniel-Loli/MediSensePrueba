@@ -1,70 +1,69 @@
-# ==========================
-# PYTHON
-# ==========================
+# ==========================================
+# 1. SEGURIDAD Y CREDENCIALES (CRÍTICO)
+# ==========================================
+.env
+.env.*
+*.env
+!example.env
+secrets.json
+
+# ==========================================
+# 2. PYTHON E INTÉRPRETE
+# ==========================================
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-*.pkl
-*.db
-
-# Virtual environments
-venv/
-.venv/
-ENV/
-env/
-env.bak/
-pip-wheel-metadata/
-pip-log.txt
-
-# Byte-compiled / optimized files
-*.pyc
-*.pyo
-*.pyd
-
-# Distribution / packaging
+*$py.class
+*.so
+.Python
 build/
+develop-eggs/
 dist/
-*.egg-info/
-*.egg
+downloads/
+eggs/
 .eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# ==========================
-# ENVIRONMENT VARIABLES
-# ==========================
-.env
-.env.local
-.env.*.local
-.env.production
-.env.dev
+# ==========================================
+# 3. ENTORNOS VIRTUALES (Virtualenvs)
+# ==========================================
+venv/
+env/
+ENV/
+.env/
+.venv/
+results/
 
-# NEVER upload secrets to GitHub
-secret.*
-credentials.json
+# ==========================================
+# 4. ARCHIVOS GRANDES Y DATOS (Tus PDFs)
+# ==========================================
+# Ignoramos los PDFs dentro de docs para no saturar el repo
+# ni chocar con el límite de 100MB de GitHub.
+docs/*.pdf
+docs/*.docx
+# Pero mantenemos un archivo vacío para que git suba la carpeta
+!docs/.gitkeep
 
-# ==========================
-# EDITOR / IDE FILES
-# ==========================
-.vscode/
+# ==========================================
+# 5. IDEs Y SISTEMA OPERATIVO
+# ==========================================
 .idea/
+.vscode/
 *.swp
-*.swo
-
-# ==========================
-# SYSTEM FILES
-# ==========================
-Thumbs.db
 .DS_Store
-desktop.ini
+Thumbs.db
 
-# ==========================
-# LOG FILES
-# ==========================
+# ==========================================
+# 6. LOGS Y BASES DE DATOS LOCALES
+# ==========================================
 *.log
-
-# ==========================
-# RENDER
-# ==========================
-# (Optional) If you generate these locally
-render-build/
-render-output/
+*.sqlite3
