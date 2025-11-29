@@ -280,7 +280,7 @@ def appointment_node(state: AgentState) -> AgentState:
         text = (
             f"Perfecto, agendaremos una cita en *{specialty}*.\n\n"
             "Cuéntame en una frase el motivo de tu consulta "
-            "(por ejemplo: dolor de cabeza desde hace 3 días)."
+            "tienes los síntomas (por ejemplo: dolor de cabeza desde hace 3 días con fiebre ligera)."
         )
         return {
             **state,
