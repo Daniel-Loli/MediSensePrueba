@@ -1,3 +1,4 @@
+# app/agents/nodes.py
 import json
 from datetime import datetime, timedelta
 
@@ -14,7 +15,6 @@ from app.agents.prompts import (
     WELLNESS_PROMPT,
 )
 
-
 # ==========================================================
 # CONSTANTES / HELPERS
 # ==========================================================
@@ -27,7 +27,7 @@ MENU_TEXT = (
     "3. Información sobre un tema médico específico"
 )
 
-# Mapa de especialidades que usará el flujo de cita
+# Especialidades disponibles explícitamente en el centro médico
 APPOINTMENT_SPECIALTIES = {
     "1": "Medicina General",
     "2": "Obstetricia",
@@ -48,8 +48,6 @@ SPECIALTY_MAP = {
 
     # Obstetricia
     "obstetricia": "Obstetricia",
-
-    # (si luego agregas más especialidades, las mapeas aquí)
 }
 
 
@@ -146,7 +144,8 @@ def menu_node(state: AgentState) -> AgentState:
             "Primero, elige la especialidad respondiendo con el número:\n"
             "1. Medicina General\n"
             "2. Obstetricia\n"
-            "3. Nutrición"
+            "3. Nutrición\n"
+            "4. Que la IA elija la especialidad según mis síntomas"
         )
         return {
             **state,
@@ -249,11 +248,29 @@ def appointment_node(state: AgentState) -> AgentState:
     if step == "ask_specialty":
         specialty = None
 
-        # Número 1/2/3
+        # Opción 4: dejar que la IA elija según síntomas
+        if msg == "4" or "elige" in msg or "sintoma" in msg or "síntoma" in msg:
+            data["choose_by_symptoms"] = True
+            # todavía NO fijamos especialidad, la pondremos en ask_reason
+            text = (
+                "Perfecto. Cuéntame en una frase qué síntomas tienes y desde cuándo, "
+                "y yo elegiré la especialidad más adecuada para tu cita.\n\n"
+                "Por ejemplo: 'tengo dolor de cabeza desde hace 3 días con fiebre ligera'."
+            )
+            return {
+                **state,
+                "flow": "appointment",
+                "appointment_step": "ask_reason",
+                "appointment_data": data,
+                "appointment_slots": slots,
+                "ai_response": text,
+            }
+
+        # Opción 1/2/3 numérica
         if msg in APPOINTMENT_SPECIALTIES:
             specialty = APPOINTMENT_SPECIALTIES[msg]
         else:
-            # Texto libre (ej: "quiero ginecología")
+            # Texto libre (ej: "quiero nutrición")
             for val in APPOINTMENT_SPECIALTIES.values():
                 if val.split()[0].lower() in msg:  # general / obstetricia / nutricion
                     specialty = val
@@ -265,7 +282,8 @@ def appointment_node(state: AgentState) -> AgentState:
                 "Elige una opción respondiendo solo con el número:\n"
                 "1. Medicina General\n"
                 "2. Obstetricia\n"
-                "3. Nutrición"
+                "3. Nutrición\n"
+                "4. Que la IA elija la especialidad según mis síntomas"
             )
             return {
                 **state,
@@ -276,11 +294,14 @@ def appointment_node(state: AgentState) -> AgentState:
                 "ai_response": text,
             }
 
+        # Especialidad elegida explícitamente
         data["specialty"] = specialty
+        data["choose_by_symptoms"] = False
+
         text = (
             f"Perfecto, agendaremos una cita en *{specialty}*.\n\n"
-            "Cuéntame en una frase el motivo de tu consulta "
-            "tienes los síntomas (por ejemplo: dolor de cabeza desde hace 3 días con fiebre ligera)."
+            "Cuéntame en una frase el motivo de tu consulta, incluyendo desde cuándo tienes "
+            "los síntomas (por ejemplo: dolor de cabeza desde hace 3 días con fiebre ligera)."
         )
         return {
             **state,
@@ -291,9 +312,36 @@ def appointment_node(state: AgentState) -> AgentState:
             "ai_response": text,
         }
 
-    # 5.2 Capturar motivo
+    # 5.2 Capturar motivo (y si aplica, dejar que la IA elija la especialidad)
     if step == "ask_reason":
         data["reason"] = msg_raw
+
+        # Llamamos al LLM para extraer info clínica y especialidad sugerida
+        try:
+            diag_resp = llm.invoke([
+                HumanMessage(content=DIAGNOSIS_EXTRACTION_PROMPT.format(text=msg_raw))
+            ])
+            clean = diag_resp.content.replace("```json", "").replace("```", "").strip()
+            diag = json.loads(clean)
+
+            data["risk_level"] = diag.get("risk_level", "BAJO")
+            data["possible_diagnosis"] = diag.get("possible_diagnosis", "Evaluación pendiente")
+            data["recommended_treatment"] = diag.get("recommended_treatment", "Reposo")
+            data["justification"] = diag.get("justification", "")
+
+            if data.get("choose_by_symptoms"):
+                detected = normalize_specialty(diag.get("specialty"))
+                data["specialty"] = detected
+        except Exception as e:
+            print(f"Error en DIAGNOSIS_EXTRACTION dentro de appointment_node: {e}")
+            data.setdefault("risk_level", "BAJO")
+            data.setdefault("possible_diagnosis", "Evaluación pendiente")
+            data.setdefault("recommended_treatment", "Reposo")
+            data.setdefault("justification", "")
+
+        # Si por alguna razón todavía no hay especialidad, usamos Medicina General
+        specialty = data.get("specialty") or "Medicina General"
+        data["specialty"] = specialty
 
         # Generar 3 horarios de 1 hora a partir de mañana
         base_day = datetime.now() + timedelta(days=1)
@@ -315,7 +363,7 @@ def appointment_node(state: AgentState) -> AgentState:
 
         text = (
             "Gracias. Ahora elige un horario disponible para tu cita "
-            "(todas las citas son de 1 hora):\n\n"
+            f"en *{specialty}* (todas las citas son de 1 hora):\n\n"
             f"{options_text}\n\n"
             "Responde con el número de la opción."
         )
@@ -353,11 +401,17 @@ def appointment_node(state: AgentState) -> AgentState:
         patient = state.get("patient_data") or {}
         name = patient.get("full_name") or f"DNI {patient.get('document_number', '')}"
 
+        extra_especialidad = (
+            " (sugerida por la IA según tus síntomas)"
+            if data.get("choose_by_symptoms")
+            else ""
+        )
+
         resumen = (
             "Este es el resumen de tu cita:\n"
             f"- Paciente: {name}\n"
             f"- DNI: {patient.get('document_number', '')}\n"
-            f"- Especialidad: {data.get('specialty')}\n"
+            f"- Especialidad: {data.get('specialty')}{extra_especialidad}\n"
             f"- Motivo: {data.get('reason')}\n"
             f"- Fecha y hora: {data.get('slot_label')}\n\n"
             "¿Deseas *confirmar* el registro de esta cita?\n"
@@ -382,10 +436,10 @@ def appointment_node(state: AgentState) -> AgentState:
                 "conversation_summary": data.get("reason", ""),
                 "symptoms": [data.get("reason", "")],
                 "specialty": data.get("specialty", "Medicina General"),
-                "risk_level": "BAJO",
-                "possible_diagnosis": "Evaluación pendiente",
-                "recommended_treatment": "Reposo",
-                "diagnosis_justification": "Pendiente",
+                "risk_level": data.get("risk_level", "BAJO"),
+                "possible_diagnosis": data.get("possible_diagnosis", "Evaluación pendiente"),
+                "recommended_treatment": data.get("recommended_treatment", "Reposo"),
+                "diagnosis_justification": data.get("justification", "Pendiente"),
                 "appointment_time": data.get("appointment_time"),
             }
 
