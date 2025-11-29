@@ -9,14 +9,16 @@ from app.agents.nodes import (
 )
 
 
-# --- Rutas del grafo ---
+# ==========================================================
+# RUTAS DEL GRAFO
+# ==========================================================
 
 
 def route_verification(state: AgentState):
     """
     Decidimos a qué nodo ir después de ejecutar 'verification':
 
-    - Si NO está verificado → seguimos en 'verification'.
+    - Si NO está verificado → seguimos en 'verification' (pero el turno termina).
     - Si se acaba de verificar (just_verified = True) → terminamos el turno
       (ya enviamos el menú desde verification_node).
     - Si ya estaba verificado:
@@ -24,7 +26,7 @@ def route_verification(state: AgentState):
         * Si no tiene flujo → ir al menú principal.
     """
     if not state.get("is_verified"):
-        # Todavía no pasó verificación
+        # Todavía no pasó verificación (seguimos en el flujo de verificación)
         return "verification"
 
     # Turno en el que se validó el código: verification_node ya envió el menú
@@ -42,30 +44,40 @@ def route_verification(state: AgentState):
 
 def route_menu(state: AgentState):
     """
-    Decide a qué nodo ir DESPUÉS de ejecutar 'menu_node',
-    en función del 'flow' que dejó seteado.
+    Decide a qué nodo ir DESPUÉS de ejecutar 'menu_node'.
+
+    ⚠ IMPORTANTE:
+    - Para 'wellness' e 'medical' SÍ saltamos en el mismo turno.
+    - Para 'appointment' NO avanzamos en este turno: solo dejamos
+      flow="appointment" y terminamos. El siguiente mensaje ya entra
+      directo a appointment_node.
     """
     flow = state.get("flow")
-    if flow == "appointment":
-        return "appointment"
+
+    # Saltos inmediatos (mismo turno)
     if flow == "wellness":
         return "wellness"
     if flow == "medical":
         return "medical"
+
+    # Para 'appointment' o cualquier otra cosa, terminamos turno.
     return END
 
 
-# --- Definición del workflow ---
-
+# ==========================================================
+# DEFINICIÓN DEL WORKFLOW
+# ==========================================================
 
 workflow = StateGraph(AgentState)
 
+# Nodos
 workflow.add_node("verification", verification_node)
 workflow.add_node("menu", menu_node)
 workflow.add_node("wellness", wellness_node)
 workflow.add_node("medical", medical_node)
 workflow.add_node("appointment", appointment_node)
 
+# Punto de entrada
 workflow.set_entry_point("verification")
 
 # Después de 'verification' decidimos si:
@@ -77,7 +89,9 @@ workflow.add_conditional_edges(
     "verification",
     route_verification,
     {
-        "verification": END,          # cuando just_verified == True
+        # Cualquier retorno "verification" termina el turno
+        # (sea porque aún falta código/DNI o porque just_verified=True)
+        "verification": END,
         "menu": "menu",
         "appointment": "appointment",
         "wellness": "wellness",
@@ -85,12 +99,13 @@ workflow.add_conditional_edges(
     },
 )
 
-# Desde el menú, en el MISMO turno, saltamos a la opción elegida
+# Desde el menú:
+# - wellness / medical → se ejecutan en el mismo turno
+# - appointment → se deja marcado el flujo pero NO se ejecuta aquí
 workflow.add_conditional_edges(
     "menu",
     route_menu,
     {
-        "appointment": "appointment",
         "wellness": "wellness",
         "medical": "medical",
         END: END,
@@ -102,4 +117,5 @@ workflow.add_edge("wellness", END)
 workflow.add_edge("medical", END)
 workflow.add_edge("appointment", END)
 
+# Grafo compilado
 app_graph = workflow.compile()
