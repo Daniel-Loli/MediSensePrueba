@@ -46,40 +46,65 @@ def wellness_node(state: AgentState) -> AgentState:
 def medical_node(state: AgentState) -> AgentState:
     user_msg = state["user_message"]
     
-    # 1. RAG: Buscar en tu índice existente
+    # 1. RAG: Buscar contexto clínico
     context = knowledge_base.search(user_msg)
     history_str = "\n".join(state.get("history", [])[-4:])
     
-    # 2. Generar respuesta
-    prompt = MEDICAL_RAG_PROMPT.format(context=context, history=history_str, question=user_msg)
-    resp = llm.invoke([HumanMessage(content=prompt)])
-    ai_text = resp.content
-    
-    # 3. Detectar si crear caso (simple heurística)
+    # 2. Lógica de Negocio: ¿Debemos crear un caso/cita?
+    # Eliminamos la restricción de len > 20 y mejoramos la detección
     case_id = None
-    if len(user_msg) > 20 and ("dolor" in user_msg or "cita" in user_msg):
+    system_status = "No se ha realizado ninguna acción administrativa."
+    
+    keywords_cita = ["cita", "agendar", "registrar", "atenderme", "turno", "médico"]
+    keywords_sintomas = ["dolor", "fiebre", "gripe", "malestar", "siento"]
+    
+    # Detectar intención de cita o reporte de síntomas fuertes
+    has_intent_cita = any(k in user_msg.lower() for k in keywords_cita)
+    has_sintomas = any(k in user_msg.lower() for k in keywords_sintomas)
+
+    if has_intent_cita or (has_sintomas and len(user_msg) > 10):
         try:
+            # Extraer datos estructurados
             diag_resp = llm.invoke([HumanMessage(content=DIAGNOSIS_EXTRACTION_PROMPT.format(text=user_msg))])
             clean = diag_resp.content.replace("```json", "").replace("```", "").strip()
             data = json.loads(clean)
             
-            # Crear caso en Node
+            # Crear payload
             payload = {
                 "patient": state["patient_data"],
                 "conversation_summary": user_msg,
                 "symptoms": [user_msg],
-                "specialty": data.get("specialty", "General"),
+                "specialty": data.get("specialty", "Medicina General"),
                 "risk_level": data.get("risk_level", "BAJO"),
-                "possible_diagnosis": data.get("possible_diagnosis"),
-                "recommended_treatment": data.get("recommended_treatment"),
-                "diagnosis_justification": data.get("justification"),
-                "appointment_time": "2024-12-01 09:00:00" # Placeholder
+                "possible_diagnosis": data.get("possible_diagnosis", "Evaluación pendiente"),
+                "recommended_treatment": data.get("recommended_treatment", "Reposo"),
+                "diagnosis_justification": data.get("justification", ""),
+                "appointment_time": "2024-12-01 09:00:00" 
             }
+            
+            # Llamada a la API
             res = business_client.create_medical_case(payload)
+            
             if res:
                 case_id = res.get("case", {}).get("id")
-                ai_text += "\n\n[SISTEMA]: He generado un pre-ingreso clínico para evaluación médica."
+                # AQUÍ está la clave: Le contamos al Prompt que ya hicimos el trabajo
+                system_status = f"✅ ÉXITO: Se ha registrado un pre-ingreso médico con ID de caso #{case_id}. La IA debe confirmar esto al usuario."
+            else:
+                system_status = "⚠️ ERROR: Se intentó registrar la cita pero el sistema backend no respondió. Pedir al usuario que llame por teléfono."
+                
         except Exception as e:
             print(f"Error creando caso: {e}")
+            system_status = "Error interno intentando procesar la solicitud."
 
+    # 3. Generar respuesta FINAL de la IA (ahora con toda la info)
+    prompt = MEDICAL_RAG_PROMPT.format(
+        context=context, 
+        history=history_str, 
+        system_status=system_status, # <--- Variable nueva inyectada
+        question=user_msg
+    )
+    
+    resp = llm.invoke([HumanMessage(content=prompt)])
+    ai_text = resp.content
+    
     return {**state, "ai_response": ai_text, "case_id": case_id}
