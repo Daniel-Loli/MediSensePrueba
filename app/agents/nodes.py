@@ -1,4 +1,3 @@
-# app/agents/nodes.py
 import json
 from datetime import datetime, timedelta
 
@@ -28,10 +27,21 @@ MENU_TEXT = (
 )
 
 # Especialidades disponibles explícitamente en el centro médico
+# (los valores deben coincidir con la columna specialty de la tabla users)
 APPOINTMENT_SPECIALTIES = {
     "1": "Medicina General",
-    "2": "Obstetricia",
-    "3": "Nutricion",
+    "2": "Nutricion",
+    "3": "Dermatologia",
+    "4": "Oftalmologia",
+    "5": "Ginecologia",
+    "6": "Cirugia Plastica",
+    "7": "Traumatologia",
+    "8": "Neumologia",
+    "9": "Cardiologia",
+    "10": "Psicologia",
+    "11": "Odontologia",
+    "12": "Fisioterapia",
+    "13": "Obstetricia",
 }
 
 # Mapa general para normalizar texto libre a especialidades de BD
@@ -41,21 +51,85 @@ SPECIALTY_MAP = {
     "medicina general": "Medicina General",
     "medicina": "Medicina General",
     "consulta general": "Medicina General",
+    "clinica general": "Medicina General",
 
     # Nutrición
     "nutricion": "Nutricion",
     "nutrición": "Nutricion",
+    "nutricionista": "Nutricion",
+
+    # Dermatología
+    "dermatologia": "Dermatologia",
+    "dermatología": "Dermatologia",
+    "piel": "Dermatologia",
+
+    # Oftalmología
+    "oftalmologia": "Oftalmologia",
+    "oftalmología": "Oftalmologia",
+    "ojos": "Oftalmologia",
+
+    # Ginecología
+    "ginecologia": "Ginecologia",
+    "ginecología": "Ginecologia",
+
+    # Cirugía plástica
+    "cirugia plastica": "Cirugia Plastica",
+    "cirugía plástica": "Cirugia Plastica",
+
+    # Traumatología
+    "traumatologia": "Traumatologia",
+    "traumatología": "Traumatologia",
+
+    # Neumología
+    "neumologia": "Neumologia",
+    "neumología": "Neumologia",
+
+    # Cardiología
+    "cardiologia": "Cardiologia",
+    "cardiología": "Cardiologia",
+    "corazon": "Cardiologia",
+    "corazón": "Cardiologia",
+
+    # Psicología
+    "psicologia": "Psicologia",
+    "psicología": "Psicologia",
+
+    # Odontología
+    "odontologia": "Odontologia",
+    "odontología": "Odontologia",
+    "dentista": "Odontologia",
+
+    # Fisioterapia
+    "fisioterapia": "Fisioterapia",
+    "terapia fisica": "Fisioterapia",
+    "terapia física": "Fisioterapia",
 
     # Obstetricia
     "obstetricia": "Obstetricia",
+    "obstetra": "Obstetricia",
 }
 
 
 def normalize_specialty(raw: str | None) -> str:
+    """
+    Normaliza la especialidad sugerida por el LLM a alguno de los valores
+    válidos para la BD. Por defecto devuelve Medicina General.
+    """
     if not raw:
         return "Medicina General"
+
     key = raw.strip().lower()
-    return SPECIALTY_MAP.get(key, "Medicina General")
+
+    # Coincidencia exacta
+    if key in SPECIALTY_MAP:
+        return SPECIALTY_MAP[key]
+
+    # Coincidencia por inclusión (ej. "cardiología pediátrica")
+    for pattern, normalized in SPECIALTY_MAP.items():
+        if pattern in key:
+            return normalized
+
+    return "Medicina General"
 
 
 # ==========================================================
@@ -98,14 +172,17 @@ def verification_node(state: AgentState) -> AgentState:
     elif step == "ask_code":
         patient = business_client.verify_code(state["dni"], msg)
         if patient:
-            # En este mismo turno enviamos el menú
+            # Cuando se verifica, limpiamos cualquier flujo viejo
             return {
                 **state,
                 "is_verified": True,
                 "patient_data": patient,
                 "verification_step": "verified",
-                "just_verified": True,   # <-- clave para que el grafo termine aquí
+                "just_verified": True,   # Turno en el que mostramos menú
                 "flow": "menu",
+                "appointment_step": None,
+                "appointment_data": {},
+                "appointment_slots": [],
                 "ai_response": MENU_TEXT,
             }
         return {**state, "ai_response": "Código incorrecto. Inténtalo nuevamente."}
@@ -143,9 +220,19 @@ def menu_node(state: AgentState) -> AgentState:
             "Perfecto, vamos a registrar tu cita.\n\n"
             "Primero, elige la especialidad respondiendo con el número:\n"
             "1. Medicina General\n"
-            "2. Obstetricia\n"
-            "3. Nutrición\n"
-            "4. Que la IA elija la especialidad según mis síntomas"
+            "2. Nutrición\n"
+            "3. Dermatología\n"
+            "4. Oftalmología\n"
+            "5. Ginecología\n"
+            "6. Cirugía plástica\n"
+            "7. Traumatología\n"
+            "8. Neumología\n"
+            "9. Cardiología\n"
+            "10. Psicología\n"
+            "11. Odontología\n"
+            "12. Fisioterapia\n"
+            "13. Obstetricia\n"
+            "14. Que la IA elija la especialidad según mis síntomas"
         )
         return {
             **state,
@@ -248,8 +335,8 @@ def appointment_node(state: AgentState) -> AgentState:
     if step == "ask_specialty":
         specialty = None
 
-        # Opción 4: dejar que la IA elija según síntomas
-        if msg == "4" or "elige" in msg or "sintoma" in msg or "síntoma" in msg:
+        # Opción 14: dejar que la IA elija según síntomas
+        if msg == "14" or "elige" in msg or "sintoma" in msg or "síntoma" in msg:
             data["choose_by_symptoms"] = True
             # todavía NO fijamos especialidad, la pondremos en ask_reason
             text = (
@@ -266,13 +353,14 @@ def appointment_node(state: AgentState) -> AgentState:
                 "ai_response": text,
             }
 
-        # Opción 1/2/3 numérica
+        # Opción 1–13 numérica
         if msg in APPOINTMENT_SPECIALTIES:
             specialty = APPOINTMENT_SPECIALTIES[msg]
         else:
-            # Texto libre (ej: "quiero nutrición")
+            # Texto libre (ej: "quiero nutrición", "cita con cardiología", etc.)
             for val in APPOINTMENT_SPECIALTIES.values():
-                if val.split()[0].lower() in msg:  # general / obstetricia / nutricion
+                # Solo comparamos con la primera palabra (Medicina, Nutricion, etc.)
+                if val.split()[0].lower() in msg:
                     specialty = val
                     break
 
@@ -281,9 +369,19 @@ def appointment_node(state: AgentState) -> AgentState:
                 "No entendí la especialidad.\n"
                 "Elige una opción respondiendo solo con el número:\n"
                 "1. Medicina General\n"
-                "2. Obstetricia\n"
-                "3. Nutrición\n"
-                "4. Que la IA elija la especialidad según mis síntomas"
+                "2. Nutrición\n"
+                "3. Dermatología\n"
+                "4. Oftalmología\n"
+                "5. Ginecología\n"
+                "6. Cirugía plástica\n"
+                "7. Traumatología\n"
+                "8. Neumología\n"
+                "9. Cardiología\n"
+                "10. Psicología\n"
+                "11. Odontología\n"
+                "12. Fisioterapia\n"
+                "13. Obstetricia\n"
+                "14. Que la IA elija la especialidad según mis síntomas"
             )
             return {
                 **state,
@@ -348,7 +446,7 @@ def appointment_node(state: AgentState) -> AgentState:
         base_day = base_day.replace(minute=0, second=0, microsecond=0)
 
         new_slots = []
-        for i, hour in enumerate([9, 10, 11]):  # 09:00-10:00, 10:00-11:00, 11:00-12:00
+        for hour in [9, 10, 11]:  # 09:00-10:00, 10:00-11:00, 11:00-12:00
             start = base_day.replace(hour=hour)
             end = start + timedelta(hours=1)
             label = f"{start.strftime('%d/%m/%Y')} de {start.strftime('%H:%M')} a {end.strftime('%H:%M')}"
