@@ -20,7 +20,7 @@ from app.agents.prompts import (
 
 MENU_TEXT = (
     "Identidad verificada ✅.\n\n"
-    "Por favor elige una opción respondiendo solo con el número:\n"
+    "Por favor elige una opción respondiendo solo con el número (version2):\n"
     "1. Registrar una cita\n"
     "2. Tips nutricionales\n"
     "3. Información sobre un tema médico específico"
