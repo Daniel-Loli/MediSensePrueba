@@ -1,3 +1,4 @@
+# app/agents/prompts.py
 TRIAGE_PROMPT = """
 Clasifica el siguiente mensaje de un usuario de WhatsApp.
 Responde SOLAMENTE una de estas palabras:

@@ -1,11 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.webhook import router
+from app.api.webhook import router, legacy_router
 
 app = FastAPI(title="MediSense AI Backend")
 
 # CORS Config
-origins = ["*"] # Ajustar en producción
+origins = ["*"]  # Ajustar en producción
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,7 +15,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Rutas oficiales de la API
 app.include_router(router, prefix="/api")
+
+# Ruta espejo para Twilio (sin /api)
+app.include_router(legacy_router)
 
 @app.get("/")
 def home():
